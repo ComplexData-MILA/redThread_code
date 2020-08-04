@@ -8,7 +8,7 @@ def get_args():
 	parser.add_argument("-label","--label_file", default="./sample_data/sampled_data_labels.pkl", help='path to the labels of the data points as a pickle file')
 	parser.add_argument("-modality", "--feature_name_file", default="./sample_data/sampled_data_feature_names.pkl", help="path to the feature names of the data as as pickle file")
 	parser.add_argument("--data_folder", default="./sample_data/", help="path to the folder containing the different feature files")
-	parser.add_argument("--budget", default=100, help='Number of times the model can query the user')
+	parser.add_argument("--budget", default=100, type=int, help='Number of times the model can query the user')
 	args = parser.parse_args()
 	return args
 
@@ -19,7 +19,7 @@ def iterative_labelling(seed, budget, rt):
 	picked_nodes = []
 	precision = 0.
 	recall = 0.
-	num_relevant = sum(list(label_hash.values()))
+	num_relevant = rt.num_positive_labels()
 	 
 	while query_counter < budget:
 		print("Remaining Number of queries : " + str(budget-query_counter))
@@ -29,13 +29,14 @@ def iterative_labelling(seed, budget, rt):
 			picked_node_label = rt.oracle(picked_node) # querying the user for the label of the picked node
 			rt.update_label_hash(picked_node, picked_node_label) # update the label hash based on the oracle output
 			query_counter += 1 
+			if picked_node_label == 1:
+				precision += 1
+				recall += 1
 		else:
 			picked_node_label = label_hash[picked_node]
 		rt.update_redthread(picked_node, picked_node_label)
 		picked_nodes.append(picked_node)
-		if picked_node_label == 1:
-			precision += 1
-			recall += 1
+		
 		#print(label_hash)
 	precision /= budget
 	recall /= num_relevant

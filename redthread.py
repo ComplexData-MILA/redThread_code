@@ -36,7 +36,9 @@ class RedThread:
 			neighbors_path2.extend([n for n in self.graph.neighbors(neighbor) if n != node])
 		return neighbors_path2
 
-
+	def num_positive_labels(self):
+		# function returns the number of positive labels in the dataset
+		return sum(self.labels)
 	# def initialize_related_nodes(self):
 	# 	# initialize the dictionary of related nodes
 	# 	for data_point in range(self.num_data_points):
