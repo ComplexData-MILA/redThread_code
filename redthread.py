@@ -1,6 +1,8 @@
 import numpy as np
+import os
 import networkx as nx
 import queue as Q
+import pickle as pkl
 import matplotlib.pyplot as plt
 
 
@@ -29,16 +31,35 @@ class RedThread:
 		self.initialize_q(seed)
 		self.initialize_shell()
 
+	# def get_feature_names(self, feature_names):
+	# 	# maps the feature names to node numbers
+	# 	feature_name_map = {}
+
+	# 	for i, item in enumerate(set(feature_names)):
+	# 		feature_name_map[item] = -(i+1)
+	# 	return feature_name_map
+	def find_neighbours(self):
+		# function that finds and stores the neighbours of all nodes in graph one time
+		self.neighbors = {}
+		for node in self.graph.nodes:
+			#print(self.graph.neighbors(node))
+			self.neighbors[node] = list(self.graph.neighbors(node))
+
+	def neighbours(self, node):
+		# function that returns the neighbours of a given node
+		return self.neighbors[node]
+
 	def get_neighours(self, node):
 		# returns the nodes of path 2 from given node
 		neighbors_path2 = []
-		for neighbor in self.graph.neighbors(node):
-			neighbors_path2.extend([n for n in self.graph.neighbors(neighbor) if n != node])
+		for neighbor in self.neighbors[node]:
+			neighbors_path2.extend([n for n in self.neighbors[neighbor] if n != node])
 		return neighbors_path2
 
 	def num_positive_labels(self):
 		# function returns the number of positive labels in the dataset
 		return sum(self.labels)
+
 	# def initialize_related_nodes(self):
 	# 	# initialize the dictionary of related nodes
 	# 	for data_point in range(self.num_data_points):
@@ -84,18 +105,28 @@ class RedThread:
 	def build_graph(self):
 		# build a graph with the data points and the feature names as nodes
 		# an edge exists between two nodes if one of them is an ad and the other is a feature that the ad has
-		self.graph = nx.Graph() # creating an undirected graph
-		feature_nodes = [-(x+1) for x in range(len(self.feature_names))] # naming the feature nodes with negative numbers
-		data_nodes = range(self.num_data_points) # naming the ad nodes with numbers
-		all_nodes = np.append(data_nodes, feature_nodes) # concatenating the two kinds of nodes
-		self.graph.add_nodes_from(all_nodes) # adding the nodes to the graph
+		# if graph already exists in file, opens it
+		if os.path.exists('redthread_graph.gpkl'):
+			self.graph = nx.read_gpickle('redthread_graph.gpkl')
+			self.neighbors = pkl.load(open('redthread_graph_node_neighbors.pkl','rb'))		
+		else:
+			self.graph = nx.Graph() # creating an undirected graph
+			#feature_nodes = [-(x+1) for x in range(len(self.feature_names))] # naming the feature nodes with negative numbers
+			feature_nodes = list(self.feature_names) # naming the feature nodes with negative numbers
+			data_nodes = range(self.num_data_points) # naming the ad nodes with numbers
+			all_nodes = np.append(data_nodes, feature_nodes) # concatenating the two kinds of nodes
+			self.graph.add_nodes_from(all_nodes) # adding the nodes to the graph
 
-		for feature in range(len(self.feature_names)):
-			for sample in range(self.num_data_points):
-				if self.data[sample][feature] > 0:
-					self.graph.add_edge(sample, -(feature+1))
-		#nx.draw(self.graph, with_labels=True)
-		#plt.show()
+			for feature in range(len(self.feature_names)):
+				for sample in range(self.num_data_points):
+					if self.data[sample][feature] > 0:
+						self.graph.add_edge(sample, -(feature+1))
+			#nx.draw(self.graph, with_labels=True)
+			#plt.show()
+			self.find_neighbours()
+			nx.write_gpickle(self.graph, "redthread_graph.gpkl")
+			pkl.dump(self.neighbors, open("redthread_graph_node_neighbors.pkl","wb"))
+			print("Graph created and saved")
 
 	def get_graph(self):
 		# function returns the graph
@@ -112,26 +143,35 @@ class RedThread:
 
 	def infer_random_walk(self, seed):
 		# corresponds to the random walk setting
-		seed_neighbors = [node for node in self.graph.neighbors(seed)] # find neighbours of seed node
+		seed_neighbors = [node for node in self.neighbors[seed]] # find neighbours of seed node
 		chosen_evidence = np.random.choice(seed_neighbors) # choose a random evidence from neighbours
-		evidence_neighbors = [node for node in self.graph.neighbors(chosen_evidence)] # find the neighbors of the chosen evidence node
+		evidence_neighbors = [node for node in self.neighbors[chosen_evidence]] # find the neighbors of the chosen evidence node
 		positive_label_evidence_neighbors = [node for node in evidence_neighbors if node not in self.label_hash.keys() or self.label_hash[node] != 1] # remove those nodes with negative label from the above neighbours
 		return np.random.choice(positive_label_evidence_neighbors) # randomly pick a positively labelled node from the neighborhood
 
 	def evidence_flow(self, current_node, modality):
 		# function that calculates the evidence support/evidence flow of a given node and a given modality
 		#positive_label_nodes = [node for node, label in self.label_hash.items() if label == 1] # nodes with positive labels
-		all_nodes = [node for node in self.label_hash.keys()] # looking at all labelled nodes
-		node_neighbors = [neighbor_node for neighbor_node in self.graph.neighbors(current_node) if neighbor_node in self.feature_map[modality]] # the neighbors of given node which belong to specific modality
+		#all_nodes = [node for node in self.label_hash.keys()] # looking at all labelled nodes
+		all_nodes = list(self.label_hash.keys()) # looking at all labelled nodes
+
+		node_neighbors = [neighbor_node for neighbor_node in self.neighbors[current_node] if neighbor_node in self.feature_map[modality]] # the neighbors of given node which belong to specific modality
 		evidence_support = 0.
+		#print(list(self.neighbors[current_node]))
+		#print(self.feature_map[modality].values())
+		#print(node_neighbors)
 		for node in all_nodes: # iterating over the nodes
 			# the neighbors of positively labelled node which belong to the specified modality
-			positive_label_node_neighbors = [neighbor_node for neighbor_node in self.graph.neighbors(node) if neighbor_node in self.feature_map[modality]]
+			positive_label_node_neighbors = list(set(self.neighbors[node]) & set(list(self.feature_map[modality])))
+			# [neighbor_node for neighbor_node in self.neighbors[node] if neighbor_node in self.feature_map[modality]]
 			# finding the nodes common to both the neighborhoods
 			common_nodes = list(set(node_neighbors) & set(positive_label_node_neighbors))
+			#print(self.neighbors[node])
+			#print(self.feature_map[modality])
+			#print(common_nodes)
 			weighted_inverse_degrees = []
 			for c_node in common_nodes: # finding the inverse degree squares for calculating the evidene flow
-				if label_hash[node] > 0:
+				if self.label_hash[node] > 0:
 					weighted_inverse_degrees.append(1./(self.graph.degree(c_node)*self.graph.degree(c_node)))
 				else:
 					weighted_inverse_degrees.append(-1./(self.graph.degree(c_node)*self.graph.degree(c_node)))
@@ -142,11 +182,11 @@ class RedThread:
 
 	def infer_weighted_random_walk(self, seed):
 		# corresponds to the weighted random walk setting
-		seed_neighbors = [node for node in self.graph.neighbors(seed)] # find neighbours of seed node
+		seed_neighbors = [node for node in self.neighbors[seed]] # find neighbours of seed node
 		neighbor_node_weights = [float(1/self.graph.degree(node)) for node in seed_neighbors] # find weights of the neighbor nodes
 		neighbor_node_probs = [weight/sum(neighbor_node_weights) for weight in neighbor_node_weights] # divide by the sum to make it a prob distribution
 		chosen_evidence = np.random.choice(seed_neighbors, p=neighbor_node_probs) # choose a random evidence from neighbours
-		evidence_neighbors = [node for node in self.graph.neighbors(chosen_evidence)] # find the neighbors of the chosen evidence node
+		evidence_neighbors = [node for node in self.neighbors[chosen_evidence]] # find the neighbors of the chosen evidence node
 		positive_label_evidence_neighbors = [node for node in evidence_neighbors if node not in self.label_hash.keys() or self.label_hash[node] != 1] # remove those nodes with negative label from the above neighbours
 		return np.random.choice(positive_label_evidence_neighbors) # randomly pick a positively labelled node from the neighborhood
 
@@ -194,13 +234,15 @@ class RedThread:
 		weighted_evidence_supports = []
 		for modality in self.feature_map.keys():
 			weighted_evidence_supports.append(self.evidence_flow(picked_node, modality) * self.get_modality_weight(modality))
+			#print(self.evidence_flow(picked_node, modality))
 		most_supported_modality = list(self.feature_map.keys())[np.argmax(weighted_evidence_supports)]
 		# updating the weight of the most supporting modality based on the label from oracle
 		if picked_node_label < 0:
 			updated_modality_weight = self.learning_rate * self.get_modality_weight(most_supported_modality)
 		else:
 			updated_modality_weight = (2 - self.learning_rate) * self.get_modality_weight(most_supported_modality)
-		self.modality_weight[modality] = updated_modality_weight
+		self.modality_weight[most_supported_modality] = updated_modality_weight
+		print(weighted_evidence_supports)
 
 	def update_redthread(self, picked_node, picked_node_label):
 		# function to update the weights of the redthread algorithm
