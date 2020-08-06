@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 
 class RedThread:
-	def __init__(self, data, labels, seed, feature_names, feature_map, build_graph, queue_size=100, lr=0.1):
+	def __init__(self, data, labels, seed, feature_names, feature_map, make_graph, queue_size=100, lr=0.1):
 		# constructor for the class
 		self.data = data
 		self.labels = labels
@@ -25,7 +25,7 @@ class RedThread:
 		self.nodes_in_q = {}
 		self.shell = {}
 		#self.initialize_related_nodes()
-		self.build_graph(args.build_graph)
+		self.build_graph(make_graph)
 		self.build_node_to_partition_map()
 		self.initialize_modality_weights()
 		self.initialize_q(seed)
@@ -102,11 +102,11 @@ class RedThread:
 			for node in evidence_nodes:
 				self.partition_map[node] = feature_type
 
-	def build_graph(self):
+	def build_graph(self, make_graph):
 		# build a graph with the data points and the feature names as nodes
 		# an edge exists between two nodes if one of them is an ad and the other is a feature that the ad has
 		# if graph already exists in file, opens it
-		if os.path.exists('redthread_graph.gpkl'):
+		if os.path.exists('redthread_graph.gpkl') and not make_graph:
 			self.graph = nx.read_gpickle('redthread_graph.gpkl')
 			self.neighbors = pkl.load(open('redthread_graph_node_neighbors.pkl','rb'))		
 		else:
