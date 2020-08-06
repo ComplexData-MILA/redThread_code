@@ -1,4 +1,5 @@
 import pickle as pkl
+import numpy as np
 from redthread import RedThread
 from argparse import ArgumentParser
 
@@ -9,6 +10,7 @@ def get_args():
 	parser.add_argument("-modality", "--feature_name_file", default="./sample_data/sampled_data_feature_names.pkl", help="path to the feature names of the data as as pickle file")
 	parser.add_argument("--data_folder", default="./sample_data/", help="path to the folder containing the different feature files")
 	parser.add_argument("--budget", default=100, type=int, help='Number of times the model can query the user')
+	parser.add_argument("--build_graph", default=False, type=bool, help='True if you want to build the data graph from scratch and False to use the pre-built graph')
 	args = parser.parse_args()
 	return args
 
@@ -83,15 +85,44 @@ if __name__ == "__main__":
 	# get the data and labels and feature names
 	data, labels, feature_names, feature_map = extract_info(args)
 
-	# choose a seed node. Choosing 0th node for now
-	seed = 0
+	# choosing random seed nodes for now
+	total_prec = 0.
+	total_rec = 0.
 
-	# create a RedThread object
-	rt = RedThread(data, labels, seed, feature_names, feature_map)
+	seeds = np.random.choice(len(data), size=10, replace=False)
 
-	precision, recall = iterative_labelling(seed, args.budget, rt)
-	f1_score = 2 * precision * recall / (precision + recall)
-	print("Precision = " + str(precision))
-	print("Recall = " + str(recall))
-	print("F1 score = " + str(f1_score))
+	for seed in seeds:
+		# create a RedThread object
+		rt = RedThread(data, labels, seed, feature_names, feature_map, args.build_graph)
+
+		precision, recall = iterative_labelling(seed, args.budget, rt)
+		f1_score = 2 * precision * recall / (precision + recall)
+		print("Precision = " + str(precision))
+		print("Recall = " + str(recall))
+		print("F1 score = " + str(f1_score))
+		total_prec += precision
+		total_rec += recall
+
+	total_prec /= len(seeds)
+	total_rec /= len(seeds)
+	total_f1 = 2 * total_prec * total_rec / (total_prec + total_rec)
+	print("Total precision = " + str(total_prec))
+	print("Total recall = " + str(total_rec))
+	print("Total f1 score = " + str(total_f1))
 	print("success")
+
+
+'''
+Precision = 0.6
+Recall = 0.024
+F1 score = 0.04615384615384615
+
+Precision = 0.65
+Recall = 0.026
+F1 score = 0.04999999999999999
+
+Precision = 0.7
+Recall = 0.028
+F1 score = 0.05384615384615385
+
+'''

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 
 class RedThread:
-	def __init__(self, data, labels, seed, feature_names, feature_map, queue_size=100, lr=0.1):
+	def __init__(self, data, labels, seed, feature_names, feature_map, build_graph, queue_size=100, lr=0.1):
 		# constructor for the class
 		self.data = data
 		self.labels = labels
@@ -25,7 +25,7 @@ class RedThread:
 		self.nodes_in_q = {}
 		self.shell = {}
 		#self.initialize_related_nodes()
-		self.build_graph()
+		self.build_graph(args.build_graph)
 		self.build_node_to_partition_map()
 		self.initialize_modality_weights()
 		self.initialize_q(seed)
@@ -242,7 +242,7 @@ class RedThread:
 		else:
 			updated_modality_weight = (2 - self.learning_rate) * self.get_modality_weight(most_supported_modality)
 		self.modality_weight[most_supported_modality] = updated_modality_weight
-		print(weighted_evidence_supports)
+		#print(weighted_evidence_supports)
 
 	def update_redthread(self, picked_node, picked_node_label):
 		# function to update the weights of the redthread algorithm
