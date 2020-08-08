@@ -26,7 +26,7 @@ class RedThread:
 		self.shell = {}
 		#self.initialize_related_nodes()
 		self.build_graph(make_graph)
-		self.build_node_to_partition_map()
+		#self.build_node_to_partition_map()
 		self.initialize_modality_weights()
 		self.initialize_q(seed)
 		self.initialize_shell()
@@ -53,7 +53,7 @@ class RedThread:
 		# returns the nodes of path 2 from given node
 		neighbors_path2 = []
 		for neighbor in self.neighbors[node]:
-			neighbors_path2.extend([n for n in self.neighbors[neighbor] if n != node])
+			neighbors_path2.extend([n for n in self.neighbors[neighbor] if n != node and n not in self.nodes_in_q.keys()])
 		return neighbors_path2
 
 	def num_positive_labels(self):
@@ -67,6 +67,7 @@ class RedThread:
 
 	def initialize_q(self, seed):
 		# function to initialize the priority queue with seed node
+		print("Initializing queue")
 		evidence_score_seed_node = self.get_score(seed)
 		self.redthread_q.put((-evidence_score_seed_node, seed))
 		print("Putting node " + str(seed))
@@ -74,6 +75,7 @@ class RedThread:
 
 	def initialize_modality_weights(self):
 		# function to initialize the weighs of the modalities
+		print("Initializing modality weights")
 		weights = np.random.random_sample(self.num_feature_map)
 		for index, feature in enumerate(self.feature_map.keys()):
 			self.modality_weight[feature] = weights[index]
@@ -81,17 +83,20 @@ class RedThread:
 
 	def get_score(self, node):
 		# function that calculates the tie-score for a given node
+		#print("Getting score")
 		score = 0.
 		for modality in self.feature_map.keys():
 			score += self.evidence_flow(node, modality) * self.get_modality_weight(modality)
 		return score
 
 	def initialize_shell(self):
-		# function to initialize the nodes in shell (neighbours of the nodes in queue):
+		# function to initialize the nodes in shell (neighbours of the nodes in queue)
+		print("Initializing shell")
 		nodes_in_shell = []
 		for node, neighbor_nodes in self.nodes_in_q.items():
-			#nodes_in_shell.extend(self.get_neighours(node))
+			# nodes_in_shell.extend(self.get_neighours(node))
 			# store the score for each of the nodes in shell
+			print(len(neighbor_nodes))
 			for nbr in neighbor_nodes:
 				self.shell[nbr] = self.get_score(nbr)
 			
@@ -198,6 +203,7 @@ class RedThread:
 		# function that maintains all the nodes in the priority queue
 		#print(add)
 		#print(remove)
+		print("Updating nodes in Q")
 		if remove != None:
 			self.nodes_in_q.pop(remove)
 		elif add != None:
@@ -209,6 +215,7 @@ class RedThread:
 
 	def update_scores_in_shell(self):
 		# recomputing the evidence flow for all the nodes in the shell
+		print("Updating scores in shell")
 		for node in self.shell.keys():
 			self.shell[node] = self.get_score(node)
 
@@ -219,6 +226,7 @@ class RedThread:
 		# 	modality_weight = self.get_modality_weight(modality)
 		# 	evidence_support = self.evidence_flow(node, modality)
 		# 	sum_evidence += (evidence_support * modality_weight)
+		print("Updating queue")
 		for node, score in self.shell.items():
 			if node in self.label_hash.keys() or node in self.nodes_in_q.keys():
 				continue
@@ -231,6 +239,7 @@ class RedThread:
 
 	def update_modality_weights(self, picked_node, picked_node_label):
 		# function that updates the modality weights based on the queries label from oracle
+		print("Updating modality weights")
 		weighted_evidence_supports = []
 		for modality in self.feature_map.keys():
 			weighted_evidence_supports.append(self.evidence_flow(picked_node, modality) * self.get_modality_weight(modality))
@@ -275,6 +284,15 @@ class RedThread:
 	def update_label_hash(self, node, label):
 		# updates the label hash based on the inferrred nodes and oracle output
 		self.label_hash[node] = label
+
+	def near_duplicate(self, curr_node):
+		# function returns whether the given node is a near duplicate of any of the existing positively labelled nodes
+		for node, label in self.label_hash.items(): 
+			if label == 1: # iterate through all positively labelled nodes
+				dot_pdt = np.dot(self.data[node], self.data[curr_node]) # dot product between the given node and the positively labelled node
+				if np.count_nonzero(dot_pdt) >= int(0.95*self.num_features):
+					return True
+		return False # if none of the nodes have positive labels or none of them are duplicates
 
 	# def shared_evidence(self, node_i, node_j):
 	# 	# calculates the shared evidence between two given nodes

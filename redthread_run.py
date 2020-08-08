@@ -26,6 +26,8 @@ def iterative_labelling(seed, budget, rt):
 	while query_counter < budget:
 		print("Remaining Number of queries : " + str(budget-query_counter))
 		picked_node = rt.infer_redthread() # pick a data point
+		if rt.near_duplicate(picked_node): # check if the picked node is a near dupliate of the positively labelled nodes so far
+			continue
 	
 		if picked_node not in list(label_hash.keys()):
 			picked_node_label = rt.oracle(picked_node) # querying the user for the label of the picked node
@@ -44,21 +46,21 @@ def iterative_labelling(seed, budget, rt):
 	recall /= num_relevant
 	return precision, recall
 
-def word_to_id(words):
-	# assigns an id to each of the feature words
-	word_id_map = {}
-	counter = 1
-	for word in set(words):
-		word_id_map[word] = -counter
-		counter += 1
-	return word_id_map
+# def word_to_id(words):
+# 	# assigns an id to each of the feature words
+# 	word_id_map = {}
+# 	counter = 1
+# 	for word in set(words):
+# 		word_id_map[word] = -counter
+# 		counter += 1
+# 	return word_id_map
 
-def get_word_id(words, word_id_map):
-	# stores the id of the word in the feature_map
-	word_ids = []
-	for word in set(words):
-		word_ids.append(word_id_map[word])
-	return word_ids
+# def get_word_id(words, word_id_map):
+# 	# stores the id of the word in the feature_map
+# 	word_ids = []
+# 	for word in set(words):
+# 		word_ids.append(word_id_map[word])
+# 	return word_ids
 
 def extract_info(args):
 	data_file = args.data_file
