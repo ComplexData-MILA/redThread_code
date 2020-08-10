@@ -287,11 +287,19 @@ class RedThread:
 
 	def near_duplicate(self, curr_node):
 		# function returns whether the given node is a near duplicate of any of the existing positively labelled nodes
+		unigram_lengths = len(self.feature_map['desc_uni']) + len(self.feature_map['title_uni'])
+		bigram_lengths = unigram_lengths + len(self.feature_map['desc_bi']) + len(self.feature_map['title_bi']) + 1
 		for node, label in self.label_hash.items(): 
 			if label == 1: # iterate through all positively labelled nodes
-				dot_pdt = np.dot(self.data[node], self.data[curr_node]) # dot product between the given node and the positively labelled node
-				if np.count_nonzero(dot_pdt) >= int(0.95*self.num_features):
+				positive_node_data = self.data[node][unigram_lengths:bigram_lengths]
+				curr_node_data = self.data[curr_node][unigram_lengths:bigram_lengths]
+				#print("Positive node data : " + str(sum(positive_node_data)))
+				#print("Current node data : " + str(sum(curr_node_data)))
+				inner_pdt = np.multiply(positive_node_data, curr_node_data) # dot product between the given node and the positively labelled node
+				if np.count_nonzero(inner_pdt) >= int(0.90*(len(self.feature_map['desc_bi'])+len(self.feature_map['title_bi']))):
+					print("non zero count = " + str(np.count_nonzero(inner_pdt)))
 					return True
+		#print("non zero count = " + str(inner_pdt) + " : " + str(int(0.90*(len(self.feature_map['desc_bi'])+len(self.feature_map['title_bi'])))))
 		return False # if none of the nodes have positive labels or none of them are duplicates
 
 	# def shared_evidence(self, node_i, node_j):
