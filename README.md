@@ -1,4 +1,4 @@
-# redThread_code
+# RedThread Implementation
 
 This repository contains the implementation for the RedThread algorithm from [this paper](https://dl.acm.org/doi/abs/10.1145/3219819.3220103). 
 
