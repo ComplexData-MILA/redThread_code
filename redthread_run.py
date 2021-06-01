@@ -5,11 +5,11 @@ from argparse import ArgumentParser
 
 def get_args():
 	parser = ArgumentParser()
-	parser.add_argument("-data","--data_file",default="./sample_data/sampled_data_features.pkl", help="path to the data pickle files containing the freature matrix")
-	parser.add_argument("-label","--label_file", default="./sample_data/sampled_data_labels.pkl", help='path to the labels of the data points as a pickle file')
-	parser.add_argument("-modality", "--feature_name_file", default="./sample_data/sampled_data_feature_names.pkl", help="path to the feature names of the data as as pickle file")
-	parser.add_argument("--data_folder", default="./sample_data/", help="path to the folder containing the different feature files")
-	parser.add_argument("--budget", default=100, type=int, help='Number of times the model can query the user')
+	parser.add_argument("-data","--data_file",default="./data/sample_data/sampled_data_features.pkl", help="path to the data pickle files containing the freature matrix")
+	parser.add_argument("-label","--label_file", default="./data/sample_data/sampled_data_labels.pkl", help='path to the labels of the data points as a pickle file')
+	parser.add_argument("-modality", "--feature_name_file", default="./data/sample_data/sampled_data_feature_names.pkl", help="path to the feature names of the data as as pickle file")
+	parser.add_argument("--data_folder", default="./data/sample_data/", help="path to the folder containing the different feature files")
+	parser.add_argument("--budget", default=10, type=int, help='Number of times the model can query the user')
 	parser.add_argument("--build_graph", default=False, type=bool, help='True if you want to build the data graph from scratch and False to use the pre-built graph')
 	args = parser.parse_args()
 	return args

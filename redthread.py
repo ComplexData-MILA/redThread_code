@@ -4,12 +4,14 @@ import networkx as nx
 import queue as Q
 import pickle as pkl
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+from scipy.sparse import csr_matrix
 
 
 class RedThread:
 	def __init__(self, data, labels, seed, feature_names, feature_map, make_graph, queue_size=100, lr=0.1):
 		# constructor for the class
-		self.data = data
+		self.data = csr_matrix(data)
 		self.labels = labels
 		self.label_hash = {seed:1}
 		self.num_data_points = self.data.shape[0]
@@ -24,6 +26,7 @@ class RedThread:
 		self.redthread_q = Q.PriorityQueue(maxsize=queue_size) # creating a priority queue to find the next inferred node (which has max weighted evidence flow)
 		self.nodes_in_q = {}
 		self.shell = {}
+		self.evidence_flow_map = {}
 		#self.initialize_related_nodes()
 		self.build_graph(make_graph)
 		#self.build_node_to_partition_map()
@@ -93,11 +96,13 @@ class RedThread:
 		# function to initialize the nodes in shell (neighbours of the nodes in queue)
 		print("Initializing shell")
 		nodes_in_shell = []
+		print("Q size = " + str(len(self.nodes_in_q)))
+		print("Storing scores for each node in the Q and their neighbors")
 		for node, neighbor_nodes in self.nodes_in_q.items():
 			# nodes_in_shell.extend(self.get_neighours(node))
 			# store the score for each of the nodes in shell
-			print(len(neighbor_nodes))
-			for nbr in neighbor_nodes:
+			print("Q item neighborhood size = " + str(len(neighbor_nodes)))
+			for nbr in tqdm(neighbor_nodes):
 				self.shell[nbr] = self.get_score(nbr)
 			
 	def build_node_to_partition_map(self):
@@ -111,13 +116,13 @@ class RedThread:
 		# build a graph with the data points and the feature names as nodes
 		# an edge exists between two nodes if one of them is an ad and the other is a feature that the ad has
 		# if graph already exists in file, opens it
-		if os.path.exists('redthread_graph.gpkl') and not make_graph:
-			self.graph = nx.read_gpickle('redthread_graph.gpkl')
-			self.neighbors = pkl.load(open('redthread_graph_node_neighbors.pkl','rb'))		
+		if os.path.exists('models/redthread_graph.gpkl') and not make_graph:
+			self.graph = nx.read_gpickle('models/redthread_graph.gpkl')
+			self.neighbors = pkl.load(open('models/redthread_graph_node_neighbors.pkl','rb'))		
 		else:
 			self.graph = nx.Graph() # creating an undirected graph
 			#feature_nodes = [-(x+1) for x in range(len(self.feature_names))] # naming the feature nodes with negative numbers
-			feature_nodes = list(self.feature_names) # naming the feature nodes with negative numbers
+			feature_nodes = map(lambda x:-(x+1), list(self.feature_names)) # naming the feature nodes with negative numbers
 			data_nodes = range(self.num_data_points) # naming the ad nodes with numbers
 			all_nodes = np.append(data_nodes, feature_nodes) # concatenating the two kinds of nodes
 			self.graph.add_nodes_from(all_nodes) # adding the nodes to the graph
@@ -129,8 +134,11 @@ class RedThread:
 			#nx.draw(self.graph, with_labels=True)
 			#plt.show()
 			self.find_neighbours()
-			nx.write_gpickle(self.graph, "redthread_graph.gpkl")
-			pkl.dump(self.neighbors, open("redthread_graph_node_neighbors.pkl","wb"))
+			nx.write_gpickle(self.graph, "models/redthread_graph.gpkl")
+			pkl.dump(self.neighbors, open("models/redthread_graph_node_neighbors.pkl","wb"))
+			
+			#self.graph = nx.to_scipy_sparse_matrix(self.graph)
+			#self.graph = csr_matrix(self.graph)
 			print("Graph created and saved")
 
 	def get_graph(self):
@@ -162,18 +170,14 @@ class RedThread:
 
 		node_neighbors = [neighbor_node for neighbor_node in self.neighbors[current_node] if neighbor_node in self.feature_map[modality]] # the neighbors of given node which belong to specific modality
 		evidence_support = 0.
-		#print(list(self.neighbors[current_node]))
-		#print(self.feature_map[modality].values())
-		#print(node_neighbors)
+
 		for node in all_nodes: # iterating over the nodes
 			# the neighbors of positively labelled node which belong to the specified modality
 			positive_label_node_neighbors = list(set(self.neighbors[node]) & set(list(self.feature_map[modality])))
 			# [neighbor_node for neighbor_node in self.neighbors[node] if neighbor_node in self.feature_map[modality]]
 			# finding the nodes common to both the neighborhoods
 			common_nodes = list(set(node_neighbors) & set(positive_label_node_neighbors))
-			#print(self.neighbors[node])
-			#print(self.feature_map[modality])
-			#print(common_nodes)
+
 			weighted_inverse_degrees = []
 			for c_node in common_nodes: # finding the inverse degree squares for calculating the evidene flow
 				if self.label_hash[node] > 0:
@@ -182,7 +186,10 @@ class RedThread:
 					weighted_inverse_degrees.append(-1./(self.graph.degree(c_node)*self.graph.degree(c_node)))
 			 
 			evidence_support += sum(weighted_inverse_degrees)
-
+		if node not in self.evidence_flow_map.keys():
+			self.evidence_flow_map[node] = {modality:evidence_support}
+		else:
+			self.evidence_flow_map[node][modality] = evidence_support
 		return evidence_support
 
 	def infer_weighted_random_walk(self, seed):
@@ -201,8 +208,7 @@ class RedThread:
 
 	def update_nodes_in_q(self, add=None, remove=None):
 		# function that maintains all the nodes in the priority queue
-		#print(add)
-		#print(remove)
+
 		print("Updating nodes in Q")
 		if remove != None:
 			self.nodes_in_q.pop(remove)
@@ -213,10 +219,20 @@ class RedThread:
 			print("Neither added nor removed node from queue")
 			exit()
 
-	def update_scores_in_shell(self):
-		# recomputing the evidence flow for all the nodes in the shell
-		print("Updating scores in shell")
+	def update_scores_in_shell(self, most_supported_modality, old_modality_weight):
+		# recomputing the evidence flow for all the nodes in the shell that are connected to the most supported modality
+		# only these nodes need to be updated because the modality weight was updated for only one modality
+		node_list = np.where(self.data.transpose()[most_supported_modality].toarray()[0] > 0)[0]
+		modality = list(self.feature_map.keys())[most_supported_modality]
+		print("Updating scores in shell of size " + str(len(node_list)))
+		#print(node_list)
 		for node in self.shell.keys():
+			#if node not in self.shell.keys():
+			#	continue
+			#if node in self.evidence_flow_map.keys(): # if the evidence flow for that node has already been calculated
+			#	self.shell[node] -= (self.evidence_flow_map[node][modality] * old_modality_weight) # removing the old weight of the modality from the evidence score
+			#	self.shell[node] += (self.evidence_flow_map[node][modality] * self.get_modality_weight(modality)) # adding the updated weight of modality
+			#else:
 			self.shell[node] = self.get_score(node)
 
 	def update_queue(self):
@@ -244,13 +260,16 @@ class RedThread:
 		for modality in self.feature_map.keys():
 			weighted_evidence_supports.append(self.evidence_flow(picked_node, modality) * self.get_modality_weight(modality))
 			#print(self.evidence_flow(picked_node, modality))
-		most_supported_modality = list(self.feature_map.keys())[np.argmax(weighted_evidence_supports)]
+		most_supported_modality_index = np.argmax(weighted_evidence_supports)
+		most_supported_modality = list(self.feature_map.keys())[most_supported_modality_index]
+		old_modality_weight = self.get_modality_weight(most_supported_modality)
 		# updating the weight of the most supporting modality based on the label from oracle
 		if picked_node_label < 0:
 			updated_modality_weight = self.learning_rate * self.get_modality_weight(most_supported_modality)
 		else:
 			updated_modality_weight = (2 - self.learning_rate) * self.get_modality_weight(most_supported_modality)
 		self.modality_weight[most_supported_modality] = updated_modality_weight
+		return most_supported_modality_index, old_modality_weight
 		#print(weighted_evidence_supports)
 
 	def update_redthread(self, picked_node, picked_node_label):
@@ -259,12 +278,12 @@ class RedThread:
 		# UPDATING THE MODALITY WEIGHTS		
 		# update the modality weight for the most supported modality
 		#print("Updating modality weights")
-		self.update_modality_weights(picked_node, picked_node_label)
+		most_supported_modality, old_modality_weight = self.update_modality_weights(picked_node, picked_node_label)
 
 		# UPDATING THE SCORES OF THE NODES IN THE SHELL
 		# update the evidence flow calculation for nodes surrounding those in the queue
 		#print("Updating shell scores")
-		self.update_scores_in_shell()
+		self.update_scores_in_shell(most_supported_modality, old_modality_weight)
 
 		#print("Updating queue")
 		self.update_queue()
@@ -291,12 +310,12 @@ class RedThread:
 		bigram_lengths = unigram_lengths + len(self.feature_map['desc_bi']) + len(self.feature_map['title_bi']) + 1
 		for node, label in self.label_hash.items(): 
 			if label == 1: # iterate through all positively labelled nodes
-				positive_node_data = self.data[node][unigram_lengths:bigram_lengths]
-				curr_node_data = self.data[curr_node][unigram_lengths:bigram_lengths]
-				#print("Positive node data : " + str(sum(positive_node_data)))
-				#print("Current node data : " + str(sum(curr_node_data)))
+				positive_node_data = self.data.todense()[node, unigram_lengths:bigram_lengths][0]
+				curr_node_data = self.data.todense()[curr_node, unigram_lengths:bigram_lengths][0]
+				#print("Positive node data : " + str(positive_node_data.shape))
+				#print("Current node data : " + str(curr_node_data.shape))
 				inner_pdt = np.multiply(positive_node_data, curr_node_data) # dot product between the given node and the positively labelled node
-				if np.count_nonzero(inner_pdt) >= int(0.90*(len(self.feature_map['desc_bi'])+len(self.feature_map['title_bi']))):
+				if np.count_nonzero(inner_pdt) >= int(0.95*(len(self.feature_map['desc_bi'])+len(self.feature_map['title_bi']))):
 					print("non zero count = " + str(np.count_nonzero(inner_pdt)))
 					return True
 		#print("non zero count = " + str(inner_pdt) + " : " + str(int(0.90*(len(self.feature_map['desc_bi'])+len(self.feature_map['title_bi'])))))
