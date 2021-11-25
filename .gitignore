@@ -3,3 +3,4 @@
 ./models/*
 ./data/sample_data/sampled_data_features.pkl
 ./data/data_with_labels.csv
+./data/*
