@@ -2,22 +2,30 @@ import pickle as pkl
 import numpy as np
 from redthread import RedThread
 from argparse import ArgumentParser
+import networkx as nx
 
 def get_args():
 	parser = ArgumentParser()
-	parser.add_argument("-data","--data_file",default="./data/sample_data/sampled_data_features.pkl", help="path to the data pickle files containing the freature matrix")
-	parser.add_argument("-label","--label_file", default="./data/sample_data/sampled_data_labels.pkl", help='path to the labels of the data points as a pickle file')
-	parser.add_argument("-modality", "--feature_name_file", default="./data/sample_data/sampled_data_feature_names.pkl", help="path to the feature names of the data as as pickle file")
-	parser.add_argument("--data_folder", default="./data/sample_data/", help="path to the folder containing the different feature files")
-	parser.add_argument("--budget", default=10, type=int, help='Number of times the model can query the user')
-	parser.add_argument("--build_graph", default=False, type=bool, help='True if you want to build the data graph from scratch and False to use the pre-built graph')
+	parser.add_argument("-data","--data_file",default="./data/sample_data/sampled_data_features.pkl", \
+		help="path to the data pickle files containing the freature matrix")
+	parser.add_argument("-label","--label_file", default="./data/sample_data/sampled_data_labels.pkl", \
+		help='path to the labels of the data points as a pickle file')
+	parser.add_argument("-modality", "--feature_name_file", default="./data/sample_data/sampled_data_feature_names.pkl", \
+		help="path to the feature names of the data as as pickle file")
+	parser.add_argument("--num_seeds",default=1, help='number of seed data points to average final precision, recall over')
+	parser.add_argument("--data_folder", default="./data/sample_data/", \
+		help="path to the folder containing the different feature files")
+	parser.add_argument("--budget", default=10, type=int, \
+		help='Number of times the model can query the user')
+	parser.add_argument("--build_graph", default=False, type=bool, \
+		help='True if you want to build the data graph from scratch and False to use the pre-built graph')
 	args = parser.parse_args()
 	return args
 
-def iterative_labelling(seed, budget, rt):
+def iterative_labelling(seed, data, budget, rt, rt_graph, feature_map, evidence_nbrs, ad_nbrs):
 	query_counter = 0 # initializing the query counter "b" in the algorithm
-	label_hash = rt.label_hash
-	rt_graph = rt.get_graph()
+	# label_hash = rt.label_hash
+	# rt_graph = rt.get_graph()
 	picked_nodes = []
 	precision = 0.
 	recall = 0.
@@ -25,11 +33,11 @@ def iterative_labelling(seed, budget, rt):
 	 
 	while query_counter < budget:
 		print("Remaining Number of queries : " + str(budget-query_counter))
-		picked_node = rt.infer_redthread() # pick a data point
-		if rt.near_duplicate(picked_node): # check if the picked node is a near dupliate of the positively labelled nodes so far
-			continue
+		picked_node = rt.infer_redthread(rt_graph, ad_nbrs, evidence_nbrs, feature_map) # pick a data point
+		# if rt.near_duplicate(picked_node): # check if the picked node is a near dupliate of the positively labelled nodes so far
+			# continue
 	
-		if picked_node not in list(label_hash.keys()):
+		if picked_node not in list(rt.label_hash.keys()):
 			picked_node_label = rt.oracle(picked_node) # querying the user for the label of the picked node
 			rt.update_label_hash(picked_node, picked_node_label) # update the label hash based on the oracle output
 			query_counter += 1 
@@ -37,8 +45,9 @@ def iterative_labelling(seed, budget, rt):
 				precision += 1
 				recall += 1
 		else:
-			picked_node_label = label_hash[picked_node]
-		rt.update_redthread(picked_node, picked_node_label)
+			picked_node_label = rt.label_hash[picked_node]
+		print("updating redthread")
+		rt.update_redthread(rt_graph, picked_node, picked_node_label, feature_map, ad_nbrs, evidence_nbrs)
 		picked_nodes.append(picked_node)
 		
 		#print(label_hash)
@@ -69,6 +78,7 @@ def extract_info(args):
 
 	data = pkl.load(open(data_file, "rb"))
 	labels = pkl.load(open(label_file, "rb"))
+
 	feature_names = pkl.load(open(all_feature_file, "rb"))
 	feature_map = {}
 	feature_map["desc_uni"] = pkl.load(open(args.data_folder + "desc_feature_names_uni.pkl","rb"))
@@ -83,6 +93,7 @@ if __name__ == "__main__":
 
 	# get command line arguments
 	args = get_args()
+	global rt_graph
 
 	# get the data and labels and feature names
 	data, labels, feature_names, feature_map = extract_info(args)
@@ -91,13 +102,19 @@ if __name__ == "__main__":
 	total_prec = 0.
 	total_rec = 0.
 
-	seeds = np.random.choice(len(data), size=10, replace=False)
+	seeds = np.random.choice(len(data), size=args.num_seeds, replace=False)
 
 	for seed in seeds:
 		# create a RedThread object
-		rt = RedThread(data, labels, seed, feature_names, feature_map, args.build_graph)
+		rt = RedThread(labels, seed, feature_names, feature_map, args.build_graph)
+		rt_graph, evidence_nbrs, ad_nbrs = rt.build_graph(data, args.build_graph, feature_names)
+		rt.initialize_q(rt_graph, ad_nbrs, evidence_nbrs, seed, feature_map)
+		rt.initialize_shell(feature_map, evidence_nbrs)
+		# rt_graph = rt.graph
+		# nx.write_gpickle(rt_graph, "models/redthread_graph.gpkl")
+		# pkl.dump(rt.neighbors, open("models/redthread_graph_node_neighbors.pkl","wb"))
 
-		precision, recall = iterative_labelling(seed, args.budget, rt)
+		precision, recall = iterative_labelling(seed, data, args.budget, rt, rt_graph, feature_map, evidence_nbrs, ad_nbrs)
 		f1_score = 2 * precision * recall / (precision + recall)
 		print("Precision = " + str(precision))
 		print("Recall = " + str(recall))
